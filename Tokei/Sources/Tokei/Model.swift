@@ -343,6 +343,155 @@ struct QoderIdeStat: Codable {
     var model: String?
 }
 
+struct CfuseNamedStat: Codable, Identifiable {
+    var name: String
+    var requests: Int
+    var success: Int
+    var errors: Int
+    var request_size: Int
+    var response_size: Int
+    var avg_duration: Int
+    var avg_ttft: Int
+    var id: String { name }
+
+    init(name: String = "", requests: Int = 0, success: Int = 0, errors: Int = 0,
+         request_size: Int = 0, response_size: Int = 0, avg_duration: Int = 0, avg_ttft: Int = 0) {
+        self.name = name
+        self.requests = requests
+        self.success = success
+        self.errors = errors
+        self.request_size = request_size
+        self.response_size = response_size
+        self.avg_duration = avg_duration
+        self.avg_ttft = avg_ttft
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
+        requests = try c.decodeIfPresent(Int.self, forKey: .requests) ?? 0
+        success = try c.decodeIfPresent(Int.self, forKey: .success) ?? 0
+        errors = try c.decodeIfPresent(Int.self, forKey: .errors) ?? 0
+        request_size = try c.decodeIfPresent(Int.self, forKey: .request_size) ?? 0
+        response_size = try c.decodeIfPresent(Int.self, forKey: .response_size) ?? 0
+        avg_duration = try c.decodeIfPresent(Int.self, forKey: .avg_duration) ?? 0
+        avg_ttft = try c.decodeIfPresent(Int.self, forKey: .avg_ttft) ?? 0
+    }
+}
+
+struct CfuseEngineStat: Codable, Identifiable {
+    var name: String
+    var requests: Int
+    var success: Int
+    var errors: Int
+    var request_size: Int
+    var response_size: Int
+    var avg_duration: Int
+    var avg_ttft: Int
+    var models: [CfuseNamedStat]
+    var id: String { name }
+
+    init(name: String = "", requests: Int = 0, success: Int = 0, errors: Int = 0,
+         request_size: Int = 0, response_size: Int = 0, avg_duration: Int = 0,
+         avg_ttft: Int = 0, models: [CfuseNamedStat] = []) {
+        self.name = name
+        self.requests = requests
+        self.success = success
+        self.errors = errors
+        self.request_size = request_size
+        self.response_size = response_size
+        self.avg_duration = avg_duration
+        self.avg_ttft = avg_ttft
+        self.models = models
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
+        requests = try c.decodeIfPresent(Int.self, forKey: .requests) ?? 0
+        success = try c.decodeIfPresent(Int.self, forKey: .success) ?? 0
+        errors = try c.decodeIfPresent(Int.self, forKey: .errors) ?? 0
+        request_size = try c.decodeIfPresent(Int.self, forKey: .request_size) ?? 0
+        response_size = try c.decodeIfPresent(Int.self, forKey: .response_size) ?? 0
+        avg_duration = try c.decodeIfPresent(Int.self, forKey: .avg_duration) ?? 0
+        avg_ttft = try c.decodeIfPresent(Int.self, forKey: .avg_ttft) ?? 0
+        models = try c.decodeIfPresent([CfuseNamedStat].self, forKey: .models) ?? []
+    }
+}
+
+struct CfuseRange: Codable {
+    var requests: Int
+    var success: Int
+    var errors: Int
+    var sessions: Int
+    var request_size: Int
+    var response_size: Int
+    var avg_duration: Int
+    var avg_ttft: Int
+    var models: [CfuseNamedStat]
+    var engines: [CfuseEngineStat]
+    var projects: [CfuseNamedStat]
+
+    init(requests: Int = 0, success: Int = 0, errors: Int = 0, sessions: Int = 0,
+         request_size: Int = 0, response_size: Int = 0, avg_duration: Int = 0,
+         avg_ttft: Int = 0, models: [CfuseNamedStat] = [], engines: [CfuseEngineStat] = [],
+         projects: [CfuseNamedStat] = []) {
+        self.requests = requests
+        self.success = success
+        self.errors = errors
+        self.sessions = sessions
+        self.request_size = request_size
+        self.response_size = response_size
+        self.avg_duration = avg_duration
+        self.avg_ttft = avg_ttft
+        self.models = models
+        self.engines = engines
+        self.projects = projects
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        requests = try c.decodeIfPresent(Int.self, forKey: .requests) ?? 0
+        success = try c.decodeIfPresent(Int.self, forKey: .success) ?? 0
+        errors = try c.decodeIfPresent(Int.self, forKey: .errors) ?? 0
+        sessions = try c.decodeIfPresent(Int.self, forKey: .sessions) ?? 0
+        request_size = try c.decodeIfPresent(Int.self, forKey: .request_size) ?? 0
+        response_size = try c.decodeIfPresent(Int.self, forKey: .response_size) ?? 0
+        avg_duration = try c.decodeIfPresent(Int.self, forKey: .avg_duration) ?? 0
+        avg_ttft = try c.decodeIfPresent(Int.self, forKey: .avg_ttft) ?? 0
+        models = try c.decodeIfPresent([CfuseNamedStat].self, forKey: .models) ?? []
+        engines = try c.decodeIfPresent([CfuseEngineStat].self, forKey: .engines) ?? []
+        projects = try c.decodeIfPresent([CfuseNamedStat].self, forKey: .projects) ?? []
+    }
+}
+
+struct CfuseRanges: Codable {
+    var today, yesterday, week, last_week, month, year: CfuseRange
+    var all: CfuseRange? = nil
+    static var empty: CfuseRanges {
+        let r = CfuseRange()
+        return CfuseRanges(today: r, yesterday: r, week: r, last_week: r, month: r, year: r)
+    }
+    func get(_ k: RangeKey) -> CfuseRange {
+        switch k {
+        case .today: return today; case .yesterday: return yesterday
+        case .week: return week; case .lastWeek: return last_week
+        case .month: return month; case .year: return year
+        case .all: return all ?? year
+        }
+    }
+    mutating func set(_ k: RangeKey, _ v: CfuseRange) {
+        switch k {
+        case .today: today = v; case .yesterday: yesterday = v
+        case .week: week = v; case .lastWeek: last_week = v
+        case .month: month = v; case .year: year = v
+        case .all: all = v
+        }
+    }
+}
+
+struct CfuseStat: Codable { var ranges: CfuseRanges }
+
 struct HermesRange: Codable {
     var hit: Double
     var `in`: Int
@@ -521,13 +670,14 @@ struct Usage: Codable {
     var grok: GrokStat
     var qoderwork: QoderStat
     var qoder: QoderIdeStat
+    var cfuse: CfuseStat
     var hermes: HermesStat
     var openclaw: OpenClawStat
     var pi: TokenUsageStat
     var opencode: TokenUsageStat
 
     enum CodingKeys: String, CodingKey {
-        case claude, codex, gemini, grok, qoder, qoderwork, hermes, openclaw, pi, opencode
+        case claude, codex, gemini, grok, qoder, qoderwork, cfuse, hermes, openclaw, pi, opencode
     }
 
     init(from decoder: Decoder) throws {
@@ -541,6 +691,7 @@ struct Usage: Codable {
             ?? QoderStat(ranges: .empty, model: nil)
         qoder = (try? c.decodeIfPresent(QoderIdeStat.self, forKey: .qoder))
             ?? QoderIdeStat(ranges: .empty, model: nil)
+        cfuse = try c.decodeIfPresent(CfuseStat.self, forKey: .cfuse) ?? CfuseStat(ranges: .empty)
         hermes = try c.decode(HermesStat.self, forKey: .hermes)
         openclaw = try c.decode(OpenClawStat.self, forKey: .openclaw)
         pi = try c.decodeIfPresent(TokenUsageStat.self, forKey: .pi) ?? TokenUsageStat(ranges: .empty)
@@ -555,6 +706,14 @@ enum Fmt {
         if v >= 1_000_000 { return String(format: "%.1fM", v / 1_000_000) }
         if v >= 1_000 { return String(format: "%.0fK", v / 1_000) }
         return String(format: "%.0f", v)
+    }
+
+    static func bytes(_ n: Int) -> String {
+        let v = Double(n)
+        if v >= 1024 * 1024 * 1024 { return String(format: "%.1fGB", v / 1024 / 1024 / 1024) }
+        if v >= 1024 * 1024 { return String(format: "%.1fMB", v / 1024 / 1024) }
+        if v >= 1024 { return String(format: "%.0fKB", v / 1024) }
+        return "\(n)B"
     }
 
     static func reset(_ epoch: Int?) -> String {

@@ -10,6 +10,7 @@ Tokei 读取本地 AI CLI 工具的日志,统计 token 用量与成本。所有�
 |------|---------|------|
 | Claude Code | `~/.claude/*/*.jsonl` | JSONL, `type=assistant` 行含 `message.usage` |
 | Codex | `~/.codex/**/rollout-*.jsonl` | JSONL, `payload.info.last_token_usage` |
+| CodeFuse / cfuse | `~/.codefuse/fuse/logs/proxy-stats/*.json` | JSON, `recentRequests[]` 代理请求统计 |
 | Gemini CLI | `~/.gemini/*/chats/session-*.json` | JSON, `messages[].tokens` |
 | Grok CLI | `~/.grok/sessions/*/*/summary.json` + `updates.jsonl` | JSON, `_meta.totalTokens` |
 | Qoder | `~/Library/Application Support/QoderWork/data/agents.db` | SQLite, `messages.metadata` |
@@ -76,6 +77,8 @@ Tokei 读取本地 AI CLI 工具的日志,统计 token 用量与成本。所有�
 - 成本 = `usage.cost.total`(优先使用)
 
 **Grok CLI** — 无输入/输出拆分,仅 `totalTokens`(上下文窗口累计,取最大值,非真实消耗量)。
+
+**CodeFuse / cfuse** — proxy-stats 不包含真实 token/cost usage;仅统计 `/v1/messages` 请求数、成功/失败、engine、model、session、cwd、requestSize、duration、ttftMs。`requestSize` 是请求 payload 大小,不等同于 input token。
 
 **Qoder** — `inputTokens` / `outputTokens` 目前全为 0,仅 `durationMs` 和 `contextUsageRatio` 有值。
 
@@ -176,7 +179,7 @@ cost = (input - cached)/1M × price_in
 
 Pi 优先使用会话 JSONL 中的 `usage.cost.total`；OpenCode 直接使用消息 JSON 中的 `cost` 字段。若 Pi 成本字段缺失，则按统一价格表用 input/output/cache_read/cache_write 回退估算。
 
-### Grok / Qoder / OpenClaw
+### Grok / CodeFuse / Qoder / OpenClaw
 
 不估算成本。
 

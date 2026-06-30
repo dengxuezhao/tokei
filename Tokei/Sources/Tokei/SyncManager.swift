@@ -120,6 +120,7 @@ final class SyncManager {
             u.grok.model = mergeModelName(u.grok.model, peer.usage.grok.model)
             mergeRanges(&u.qoderwork.ranges, peer.usage.qoderwork.ranges, pairs)
             mergeRanges(&u.qoder.ranges, peer.usage.qoder.ranges, pairs)
+            mergeRanges(&u.cfuse.ranges, peer.usage.cfuse.ranges, pairs)
             mergeRanges(&u.hermes.ranges, peer.usage.hermes.ranges, pairs)
             mergeRanges(&u.openclaw.ranges, peer.usage.openclaw.ranges, pairs)
             mergeRanges(&u.pi.ranges, peer.usage.pi.ranges, pairs)
@@ -259,6 +260,25 @@ final class SyncManager {
         }
     }
 
+    private static func mergeRanges(_ dst: inout CfuseRanges, _ src: CfuseRanges, _ pairs: [(src: RangeKey, dst: RangeKey)]) {
+        for pair in pairs {
+            var d = dst.get(pair.dst), s = src.get(pair.src)
+            let originalRequests = d.requests
+            d.requests += s.requests
+            d.success += s.success
+            d.errors += s.errors
+            d.sessions += s.sessions
+            d.request_size += s.request_size
+            d.response_size += s.response_size
+            d.avg_duration = weightedAverage(d.avg_duration, originalRequests, s.avg_duration, s.requests) ?? 0
+            d.avg_ttft = weightedAverage(d.avg_ttft, originalRequests, s.avg_ttft, s.requests) ?? 0
+            mergeCfuseNamedStats(&d.models, s.models)
+            mergeCfuseEngines(&d.engines, s.engines)
+            mergeCfuseNamedStats(&d.projects, s.projects)
+            dst.set(pair.dst, d)
+        }
+    }
+
     private static func mergeRanges(_ dst: inout HermesRanges, _ src: HermesRanges, _ pairs: [(src: RangeKey, dst: RangeKey)]) {
         for pair in pairs {
             var d = dst.get(pair.dst), s = src.get(pair.src)
@@ -359,6 +379,43 @@ final class SyncManager {
             }
         }
         dst.sort { $0.cost > $1.cost }
+    }
+
+    private static func mergeCfuseNamedStats(_ dst: inout [CfuseNamedStat], _ src: [CfuseNamedStat]) {
+        for m in src {
+            if let idx = dst.firstIndex(where: { $0.name == m.name }) {
+                let originalRequests = dst[idx].requests
+                dst[idx].requests += m.requests
+                dst[idx].success += m.success
+                dst[idx].errors += m.errors
+                dst[idx].request_size += m.request_size
+                dst[idx].response_size += m.response_size
+                dst[idx].avg_duration = weightedAverage(dst[idx].avg_duration, originalRequests, m.avg_duration, m.requests) ?? 0
+                dst[idx].avg_ttft = weightedAverage(dst[idx].avg_ttft, originalRequests, m.avg_ttft, m.requests) ?? 0
+            } else {
+                dst.append(m)
+            }
+        }
+        dst.sort { $0.requests > $1.requests }
+    }
+
+    private static func mergeCfuseEngines(_ dst: inout [CfuseEngineStat], _ src: [CfuseEngineStat]) {
+        for m in src {
+            if let idx = dst.firstIndex(where: { $0.name == m.name }) {
+                let originalRequests = dst[idx].requests
+                dst[idx].requests += m.requests
+                dst[idx].success += m.success
+                dst[idx].errors += m.errors
+                dst[idx].request_size += m.request_size
+                dst[idx].response_size += m.response_size
+                dst[idx].avg_duration = weightedAverage(dst[idx].avg_duration, originalRequests, m.avg_duration, m.requests) ?? 0
+                dst[idx].avg_ttft = weightedAverage(dst[idx].avg_ttft, originalRequests, m.avg_ttft, m.requests) ?? 0
+                mergeCfuseNamedStats(&dst[idx].models, m.models)
+            } else {
+                dst.append(m)
+            }
+        }
+        dst.sort { $0.requests > $1.requests }
     }
 
     private static func mergeModelName(_ lhs: String?, _ rhs: String?) -> String? {

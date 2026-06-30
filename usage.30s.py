@@ -8,6 +8,7 @@
 # 数据全部读自本地会话日志,运行/刷新不联网、不改动任何 CLI(仅 --update-prices 显式联网更新价格表):
 #   Claude Code: ~/.claude/projects/<proj>/<session>.jsonl  (assistant 行 message.usage,增量)
 #   Codex:       ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl (token_count 事件,含额度)
+#   CodeFuse:    ~/.codefuse/fuse/logs/proxy-stats/*.json (代理请求统计,非 token usage)
 #   Pi:          ~/.pi/agent/sessions/**/*.jsonl (assistant 行 message.usage)
 
 import os
@@ -30,6 +31,7 @@ OPENCLAW_DB = os.path.join(HOME, ".openclaw", "tasks", "runs.sqlite")
 OPENCLAW_AGENTS = os.path.join(HOME, ".openclaw", "agents")
 PI_AGENT_DIR = os.path.expanduser(os.environ.get("PI_CODING_AGENT_DIR", os.path.join(HOME, ".pi", "agent")))
 PI_SESSION_DIR = os.path.expanduser(os.environ.get("PI_CODING_AGENT_SESSION_DIR", os.path.join(PI_AGENT_DIR, "sessions")))
+CFUSE_PROXY_STATS_DIR = os.path.join(HOME, ".codefuse", "fuse", "logs", "proxy-stats")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 _USER_DIR = os.path.join(HOME, ".tokei")
@@ -262,7 +264,7 @@ def human(n: float) -> str:
 # ---------- 增量扫描缓存 ----------
 import tempfile as _tempfile
 _SCAN_CACHE_FILE = os.path.join(_tempfile.gettempdir(), "_tokei_scan_cache.json")
-_SCAN_CACHE_VERSION = 9
+_SCAN_CACHE_VERSION = 10
 
 
 def _load_scan_cache():
@@ -330,6 +332,17 @@ def _empty_qoder():
     ranges = {k: {"in": 0, "out": 0, "sessions": 0, "calls": 0, "sub_agents": 0,
                   "duration": 0, "turns": 0, "ctx_sum": 0.0, "ctx_count": 0} for k in RANGE_KEYS}
     return {"ranges": ranges, "model": None}
+
+
+def _empty_cfuse_bucket():
+    return {"requests": 0, "success": 0, "errors": 0,
+            "request_size": 0, "response_size": 0,
+            "duration_sum": 0, "ttft_sum": 0, "ttft_count": 0,
+            "sessions": set(), "models": {}, "engines": {}, "projects": {}}
+
+
+def _empty_cfuse():
+    return {"ranges": {k: _empty_cfuse_bucket() for k in RANGE_KEYS}}
 
 
 def _empty_hermes():
@@ -866,6 +879,149 @@ def scan_grok(bounds):
             b["response_sum"] += response_sum
             b["latency_count"] += latency_count
     return {"ranges": B, "model": latest_model}
+
+
+# ---------- CodeFuse / cfuse ----------
+# 代理统计: ~/.codefuse/fuse/logs/proxy-stats/<engine>-YYYY-MM-DD.json
+# 当前本地样例没有真实 token/cost usage,只统计请求、模型、engine、项目和耗时。
+def _cfuse_stat_bucket():
+    return {"requests": 0, "success": 0, "errors": 0,
+            "request_size": 0, "response_size": 0,
+            "duration_sum": 0, "ttft_sum": 0, "ttft_count": 0}
+
+
+def _cfuse_add_stat(target, request_size, response_size, duration, ttft, ok):
+    target["requests"] += 1
+    target["success"] += 1 if ok else 0
+    target["errors"] += 0 if ok else 1
+    target["request_size"] += int(request_size or 0)
+    target["response_size"] += int(response_size or 0)
+    target["duration_sum"] += int(duration or 0)
+    if isinstance(ttft, (int, float)) and ttft > 0:
+        target["ttft_sum"] += int(ttft)
+        target["ttft_count"] += 1
+
+
+def _cfuse_group_add(groups, name, request_size, response_size, duration, ttft, ok):
+    if not name:
+        return None
+    bucket = groups.setdefault(str(name), _cfuse_stat_bucket())
+    _cfuse_add_stat(bucket, request_size, response_size, duration, ttft, ok)
+    return bucket
+
+
+def _cfuse_freeze(day):
+    out = dict(day)
+    out["sessions"] = sorted(day.get("sessions", set()))
+    return out
+
+
+def _cfuse_merge_bucket(dst, src):
+    dst["requests"] += src.get("requests", 0)
+    dst["success"] += src.get("success", 0)
+    dst["errors"] += src.get("errors", 0)
+    dst["request_size"] += src.get("request_size", 0)
+    dst["response_size"] += src.get("response_size", 0)
+    dst["duration_sum"] += src.get("duration_sum", 0)
+    dst["ttft_sum"] += src.get("ttft_sum", 0)
+    dst["ttft_count"] += src.get("ttft_count", 0)
+    for sid in src.get("sessions", []):
+        dst["sessions"].add(sid)
+    for name, stat in src.get("models", {}).items():
+        _cfuse_merge_stat(dst["models"].setdefault(name, _cfuse_stat_bucket()), stat)
+    for name, stat in src.get("projects", {}).items():
+        _cfuse_merge_stat(dst["projects"].setdefault(name, _cfuse_stat_bucket()), stat)
+    for name, stat in src.get("engines", {}).items():
+        eng = dst["engines"].setdefault(name, dict(_cfuse_stat_bucket(), models={}))
+        _cfuse_merge_stat(eng, stat)
+        for model, mv in stat.get("models", {}).items():
+            _cfuse_merge_stat(eng["models"].setdefault(model, _cfuse_stat_bucket()), mv)
+
+
+def _cfuse_merge_stat(dst, src):
+    dst["requests"] += src.get("requests", 0)
+    dst["success"] += src.get("success", 0)
+    dst["errors"] += src.get("errors", 0)
+    dst["request_size"] += src.get("request_size", 0)
+    dst["response_size"] += src.get("response_size", 0)
+    dst["duration_sum"] += src.get("duration_sum", 0)
+    dst["ttft_sum"] += src.get("ttft_sum", 0)
+    dst["ttft_count"] += src.get("ttft_count", 0)
+
+
+def scan_cfuse(bounds, cache):
+    fc = cache.setdefault("cfuse", {})
+    B = {k: _empty_cfuse_bucket() for k in RANGE_KEYS}
+    if not os.path.isdir(CFUSE_PROXY_STATS_DIR):
+        return {"ranges": B}
+
+    stale = set(fc.keys())
+    for f in glob.glob(os.path.join(CFUSE_PROXY_STATS_DIR, "*.json")):
+        stale.discard(f)
+        try:
+            st = os.stat(f)
+        except OSError:
+            continue
+        sig = f"{st.st_mtime}:{st.st_size}"
+        entry = fc.get(f)
+        if not entry or entry.get("sig") != sig:
+            days = {}
+            seen = set()
+            fallback_engine = os.path.basename(f).split("-", 1)[0] or "unknown"
+            try:
+                with open(f, "r", encoding="utf-8", errors="ignore") as fh:
+                    doc = json.load(fh)
+            except Exception:
+                fc[f] = {"sig": sig, "days": days}
+                continue
+            engine = str(doc.get("engine") or fallback_engine)
+            for req in doc.get("recentRequests") or []:
+                if not isinstance(req, dict):
+                    continue
+                path = req.get("path") or ""
+                if not path.startswith("/v1/messages"):
+                    continue
+                st_ms = req.get("startTime")
+                if not isinstance(st_ms, (int, float)):
+                    continue
+                rid = req.get("id") or f"{f}:{st_ms}:{req.get('turnId')}:{path}"
+                if rid in seen:
+                    continue
+                seen.add(rid)
+                dt = datetime.fromtimestamp(st_ms / 1000).astimezone()
+                dk = dt.date().isoformat()
+                day = days.setdefault(dk, _empty_cfuse_bucket())
+                status = int(req.get("statusCode") or 0)
+                ok = status > 0 and status < 400 and not req.get("error")
+                request_size = req.get("requestSize") or 0
+                response_size = req.get("responseSize") or 0
+                duration = req.get("duration") or 0
+                ttft = req.get("ttftMs")
+                model = req.get("model") or "unknown"
+                cwd = req.get("cwd") or ""
+                _cfuse_add_stat(day, request_size, response_size, duration, ttft, ok)
+                if req.get("sessionId"):
+                    day["sessions"].add(req["sessionId"])
+                _cfuse_group_add(day["models"], model, request_size, response_size, duration, ttft, ok)
+                _cfuse_group_add(day["projects"], cwd, request_size, response_size, duration, ttft, ok)
+                eng = _cfuse_group_add(day["engines"], engine, request_size, response_size, duration, ttft, ok)
+                if eng is not None:
+                    eng.setdefault("models", {})
+                    _cfuse_group_add(eng["models"], model, request_size, response_size, duration, ttft, ok)
+            fc[f] = {"sig": sig, "days": {dk: _cfuse_freeze(day) for dk, day in days.items()}}
+
+    for p in stale:
+        fc.pop(p, None)
+
+    for entry in fc.values():
+        for dk, day in entry.get("days", {}).items():
+            try:
+                d = date.fromisoformat(dk)
+            except ValueError:
+                continue
+            for k in classify_date(d, bounds):
+                _cfuse_merge_bucket(B[k], day)
+    return {"ranges": B}
 
 
 # ---------- Qoder ----------
@@ -1650,6 +1806,7 @@ def compute():
     gk = _safe_scan("grok", lambda: scan_grok(bounds), _empty_grok, errors)
     qd = _safe_scan("qoderwork", lambda: scan_qoder(bounds, cache), _empty_qoder, errors)
     qi = _safe_scan("qoder_ide", lambda: scan_qoder_ide(bounds, cache), _empty_qoder_ide, errors)
+    cf = _safe_scan("cfuse", lambda: scan_cfuse(bounds, cache), _empty_cfuse, errors)
     hm = _safe_scan("hermes", lambda: scan_hermes(bounds, cache), _empty_hermes, errors)
     oc = _safe_scan("openclaw", lambda: scan_openclaw(bounds, cache), _empty_openclaw, errors)
     pi = _safe_scan("pi", lambda: scan_pi(bounds, cache), _empty_pi, errors)
@@ -1725,6 +1882,42 @@ def compute():
     qwranges = {k: qoderwork_range(qd["ranges"][k]) for k in RANGE_KEYS}
     qranges = {k: qoder_range(qi["ranges"][k]) for k in RANGE_KEYS}
 
+    def cfuse_stat(name, v, include_models=False):
+        out = {
+            "name": name,
+            "requests": v.get("requests", 0),
+            "success": v.get("success", 0),
+            "errors": v.get("errors", 0),
+            "request_size": v.get("request_size", 0),
+            "response_size": v.get("response_size", 0),
+            "avg_duration": int(v.get("duration_sum", 0) / v.get("requests", 0)) if v.get("requests", 0) else 0,
+            "avg_ttft": int(v.get("ttft_sum", 0) / v.get("ttft_count", 0)) if v.get("ttft_count", 0) else 0,
+        }
+        if include_models:
+            out["models"] = cfuse_stats(v.get("models", {}))
+        return out
+
+    def cfuse_stats(values, include_models=False):
+        return [cfuse_stat(n, v, include_models) for n, v in
+                sorted(values.items(), key=lambda kv: (-kv[1].get("requests", 0), kv[0]))[:10]]
+
+    def cfuse_range(b):
+        return {
+            "requests": b.get("requests", 0),
+            "success": b.get("success", 0),
+            "errors": b.get("errors", 0),
+            "sessions": len(b.get("sessions", [])),
+            "request_size": b.get("request_size", 0),
+            "response_size": b.get("response_size", 0),
+            "avg_duration": int(b.get("duration_sum", 0) / b.get("requests", 0)) if b.get("requests", 0) else 0,
+            "avg_ttft": int(b.get("ttft_sum", 0) / b.get("ttft_count", 0)) if b.get("ttft_count", 0) else 0,
+            "models": cfuse_stats(b.get("models", {})),
+            "engines": cfuse_stats(b.get("engines", {}), include_models=True),
+            "projects": cfuse_stats(b.get("projects", {})),
+        }
+
+    cfranges = {k: cfuse_range(cf["ranges"][k]) for k in RANGE_KEYS}
+
     def hermes_range(b):
         denom = b["cr"] + b["cw"] + b["in"]
         hit = (b["cr"] / denom * 100) if denom else 0.0
@@ -1797,6 +1990,9 @@ def compute():
         "qoder": {
             "ranges": qranges,
             "model": qi.get("model"),
+        },
+        "cfuse": {
+            "ranges": cfranges,
         },
         "hermes": {
             "ranges": hranges,

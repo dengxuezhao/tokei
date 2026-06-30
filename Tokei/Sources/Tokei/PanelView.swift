@@ -25,6 +25,7 @@ struct PanelView: View {
     @AppStorage("showCodex") private var showCodex = true
     @AppStorage("showGemini") private var showGemini = true
     @AppStorage("showGrok") private var showGrok = true
+    @AppStorage("showCfuse") private var showCfuse = true
     @AppStorage("showQoderIde") private var showQoder = true
     @AppStorage("showQoderWork") private var showQoderWork = true
     @AppStorage("showHermes") private var showHermes = true
@@ -33,7 +34,7 @@ struct PanelView: View {
     @AppStorage("showOpenCode") private var showOpenCode = true
 
     private var visibleCount: Int {
-        [showClaude, showCodex, showGemini, showGrok, showQoder, showQoderWork, showHermes, showOpenClaw, showPi, showOpenCode].filter { $0 }.count
+        [showClaude, showCodex, showGemini, showGrok, showCfuse, showQoder, showQoderWork, showHermes, showOpenClaw, showPi, showOpenCode].filter { $0 }.count
     }
     private var hasMultipleDevices: Bool { store.syncEnabled && !store.peers.isEmpty }
     private var useWide: Bool { visibleCount > 2 }
@@ -208,6 +209,7 @@ struct PanelView: View {
     private func toolCards(for u: Usage) -> [ToolCardItem] {
         let cr = u.claude.ranges.get(sel), xr = u.codex.ranges.get(sel)
         let gr = u.gemini.ranges.get(sel), kr = u.grok.ranges.get(sel)
+        let cfr = u.cfuse.ranges.get(sel)
         let qr = u.qoder.ranges.get(sel), qwr = u.qoderwork.ranges.get(sel)
         let hr = u.hermes.ranges.get(sel)
         let lr = u.openclaw.ranges.get(sel), pr = u.pi.ranges.get(sel), or = u.opencode.ranges.get(sel)
@@ -216,6 +218,8 @@ struct PanelView: View {
                          tint: Theme.claude, content: AnyView(claudeBlock(u.claude, cr))),
             ToolCardItem(id: "codex", name: "Codex", visible: showCodex, active: xr.sessions > 0,
                          tint: Theme.codex, content: AnyView(codexBlock(u.codex, xr))),
+            ToolCardItem(id: "cfuse", name: "CodeFuse", visible: showCfuse, active: cfr.requests > 0,
+                         tint: Theme.cfuse, content: AnyView(cfuseBlock(cfr))),
             ToolCardItem(id: "gemini", name: "Gemini", visible: showGemini, active: gr.sessions > 0,
                          tint: Theme.gemini, content: AnyView(geminiBlock(gr))),
             ToolCardItem(id: "grok", name: "Grok", visible: showGrok, active: kr.sessions > 0,
@@ -356,6 +360,45 @@ struct PanelView: View {
                                         tokIn: m.in, tokOut: m.out, tokCR: m.cached, tokCW: m.thoughts)
                     }
                     modelDisclosure(geminiRows, open: $geminiModelsOpen, tint: Theme.gemini)
+                }
+            } else {
+                emptyHint
+            }
+        }
+    }
+
+    // MARK: - CodeFuse 卡片
+    @ViewBuilder
+    func cfuseBlock(_ r: CfuseRange) -> some View {
+        VStack(alignment: .leading, spacing: 11) {
+            cardHead("CodeFuse", tint: Theme.cfuse, sessions: r.sessions)
+            if r.requests > 0 {
+                CostHeadline(value: Fmt.human(r.requests), caption: "\(sel.label) 请求", tint: Theme.cfuse)
+                metricGrid({
+                    var items: [Metric] = [
+                        .init("checkmark.circle", "成功", "\(r.success)"),
+                        .init("person.2", "会话", "\(r.sessions)"),
+                        .init("doc.text", "请求体", Fmt.bytes(r.request_size)),
+                    ]
+                    if r.errors > 0 {
+                        items.append(.init("exclamationmark.triangle", "错误", "\(r.errors)"))
+                    }
+                    if r.avg_duration > 0 {
+                        items.append(.init("clock", "耗时", Fmt.duration(r.avg_duration)))
+                    }
+                    if r.avg_ttft > 0 {
+                        items.append(.init("timer", "首字", String(format: "%.1fs", Double(r.avg_ttft) / 1000)))
+                    }
+                    return items
+                }(), tint: Theme.cfuse)
+                if let engine = r.engines.first {
+                    infoBadge("engine", engine.name, tint: Theme.cfuse)
+                }
+                if let model = r.models.first {
+                    modelBadge(model.name, tint: Theme.cfuse)
+                }
+                if let project = r.projects.first {
+                    infoBadge("project", (project.name as NSString).lastPathComponent, tint: Theme.cfuse)
                 }
             } else {
                 emptyHint
@@ -612,6 +655,20 @@ struct PanelView: View {
             Text(model)
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .foregroundStyle(Theme.tSecondary)
+                .padding(.horizontal, 7).padding(.vertical, 2)
+                .background(Capsule().fill(tint.opacity(0.16)))
+        }
+    }
+
+    func infoBadge(_ label: String, _ value: String, tint: Color) -> some View {
+        HStack {
+            Text(label).font(.system(size: 11)).foregroundStyle(Theme.tTertiary)
+            Spacer()
+            Text(value)
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(Theme.tSecondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
                 .padding(.horizontal, 7).padding(.vertical, 2)
                 .background(Capsule().fill(tint.opacity(0.16)))
         }
@@ -1134,6 +1191,7 @@ struct PanelView: View {
                 settingsRow("Codex", tint: Theme.codex, isOn: $showCodex)
                 settingsRow("Gemini", tint: Theme.gemini, isOn: $showGemini)
                 settingsRow("Grok", tint: Theme.grok, isOn: $showGrok)
+                settingsRow("CodeFuse", tint: Theme.cfuse, isOn: $showCfuse)
                 settingsRow("Qoder", tint: Theme.qoder, isOn: $showQoder)
                 settingsRow("QoderWork", tint: Theme.qoderwork, isOn: $showQoderWork)
                 settingsRow("Hermes", tint: Theme.hermes, isOn: $showHermes)
@@ -1657,7 +1715,7 @@ struct PanelView: View {
 
         if let data = result.stdout.data(using: .utf8),
            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            let tools = ["claude", "codex", "gemini", "grok", "qoder", "qoderwork", "hermes", "openclaw", "pi", "opencode"]
+            let tools = ["claude", "codex", "cfuse", "gemini", "grok", "qoder", "qoderwork", "hermes", "openclaw", "pi", "opencode"]
                 .filter { json[$0] != nil }
                 .joined(separator: ",")
             lines.append("json: ok tools: \(tools)")
