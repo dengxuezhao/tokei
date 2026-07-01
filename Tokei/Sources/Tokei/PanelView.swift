@@ -1503,7 +1503,7 @@ struct PanelView: View {
                     Text("设置")
                         .font(.system(size: 15, weight: .bold, design: .rounded))
                         .foregroundStyle(Theme.tPrimary)
-                    Text("\(Updater.releaseTag) · \(Self.buildVersion)")
+                    Text(Self.settingsVersionLabel)
                         .font(.system(size: 8, design: .monospaced))
                         .foregroundStyle(Theme.tTertiary.opacity(0.6))
                 }
@@ -1744,6 +1744,12 @@ struct PanelView: View {
 
     static let buildVersion = "2026.0615"
 
+    static var settingsVersionLabel: String {
+        let shortVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        let devSuffix = shortVersion?.contains("dev") == true ? " · dev" : ""
+        return "\(Updater.releaseTag) · \(buildVersion)\(devSuffix)"
+    }
+
     static var skillPath: String {
         return "https://raw.githubusercontent.com/cclank/tokei/main/skills/tokei-setup.md"
     }
@@ -1804,11 +1810,16 @@ struct PanelView: View {
             Text(name)
                 .font(.system(size: 11.5, weight: .medium))
                 .foregroundStyle(Theme.tPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+                .allowsTightening(true)
+                .layoutPriority(1)
             Spacer()
             Toggle("", isOn: isOn)
                 .toggleStyle(.switch)
                 .controlSize(.mini)
                 .labelsHidden()
+                .frame(width: 42, alignment: .trailing)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
