@@ -7,6 +7,7 @@
 #
 # 数据全部读自本地会话日志,运行/刷新不联网、不改动任何 CLI(仅 --update-prices 显式联网更新价格表):
 #   Claude Code: ~/.claude/projects/<proj>/<session>.jsonl  (assistant 行 message.usage,增量)
+#                ~/.claude.json projects.*.lastTotal* 兜底补充新版 CLI 只写入状态汇总的会话
 #   Codex:       ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl (token_count 事件,含额度)
 #   CodeFuse:    ~/.codefuse/fuse/logs/proxy-stats/*.json (代理请求统计,非 token usage)
 #   Pi:          ~/.pi/agent/sessions/**/*.jsonl (assistant 行 message.usage)
@@ -20,6 +21,8 @@ from datetime import datetime, timedelta, date
 
 HOME = os.path.expanduser("~")
 CLAUDE_DIR = os.path.join(HOME, ".claude", "projects")
+CLAUDE_STATE = os.path.join(HOME, ".claude.json")
+CLAUDE_HISTORY = os.path.join(HOME, ".claude", "history.jsonl")
 CODEX_DIR = os.path.join(HOME, ".codex", "sessions")
 GEMINI_DIR = os.path.join(HOME, ".gemini", "tmp")
 GROK_DIR = os.path.join(HOME, ".grok", "sessions")
@@ -264,7 +267,7 @@ def human(n: float) -> str:
 # ---------- 增量扫描缓存 ----------
 import tempfile as _tempfile
 _SCAN_CACHE_FILE = os.path.join(_tempfile.gettempdir(), "_tokei_scan_cache.json")
-_SCAN_CACHE_VERSION = 10
+_SCAN_CACHE_VERSION = 11
 
 
 def _load_scan_cache():
@@ -429,6 +432,100 @@ def _safe_scan(name, fn, fallback, errors):
 
 
 # ---------- Claude Code ----------
+def _claude_state_dt(value):
+    try:
+        ts = float(value)
+        if ts <= 0:
+            return None
+        if ts > 1_000_000_000_000:
+            ts /= 1000
+        return datetime.fromtimestamp(ts).astimezone()
+    except Exception:
+        return None
+
+
+def _claude_history_dates():
+    out = {}
+    try:
+        with open(CLAUDE_HISTORY, "r", encoding="utf-8", errors="ignore") as fh:
+            for line in fh:
+                try:
+                    obj = json.loads(line)
+                except Exception:
+                    continue
+                sid = obj.get("sessionId")
+                dt = _claude_state_dt(obj.get("timestamp"))
+                if not sid or dt is None:
+                    continue
+                old = out.get(sid)
+                if old is None or dt > old:
+                    out[sid] = dt
+    except OSError:
+        pass
+    return out
+
+
+def _claude_state_days(seen_sessions):
+    state = _load_json(CLAUDE_STATE, {})
+    projects = state.get("projects") if isinstance(state, dict) else None
+    if not isinstance(projects, dict):
+        return {}
+    days = {}
+    history_dates = None
+
+    def add_model(day, model, vals):
+        mm = day["models"].setdefault(model or "claude-code-state",
+                                      {"in": 0, "out": 0, "cr": 0, "cw": 0, "cost": 0.0})
+        mm["in"] += int(vals.get("inputTokens") or vals.get("in") or 0)
+        mm["out"] += int(vals.get("outputTokens") or vals.get("out") or 0)
+        mm["cr"] += int(vals.get("cacheReadInputTokens") or vals.get("cr") or 0)
+        mm["cw"] += int(vals.get("cacheCreationInputTokens") or vals.get("cw") or 0)
+        mm["cost"] += float(vals.get("costUSD") or vals.get("cost") or 0)
+
+    for project, p in projects.items():
+        if not isinstance(p, dict):
+            continue
+        sid = p.get("lastSessionId")
+        if sid and sid in seen_sessions:
+            continue
+        dt = _claude_state_dt(p.get("lastSessionModified"))
+        if dt is None and sid:
+            if history_dates is None:
+                history_dates = _claude_history_dates()
+            dt = history_dates.get(sid)
+        if dt is None:
+            continue
+        vals = {
+            "in": int(p.get("lastTotalInputTokens") or 0),
+            "out": int(p.get("lastTotalOutputTokens") or 0),
+            "cr": int(p.get("lastTotalCacheReadInputTokens") or 0),
+            "cw": int(p.get("lastTotalCacheCreationInputTokens") or 0),
+            "cost": float(p.get("lastCost") or 0),
+        }
+        if not (vals["in"] or vals["out"] or vals["cr"] or vals["cw"] or vals["cost"]):
+            continue
+        dk = dt.date().isoformat()
+        day = days.setdefault(dk, {"in": 0, "out": 0, "cr": 0, "cw": 0,
+                                   "cost": 0.0, "models": {}, "sessions": set()})
+        day["in"] += vals["in"]; day["out"] += vals["out"]
+        day["cr"] += vals["cr"]; day["cw"] += vals["cw"]; day["cost"] += vals["cost"]
+        day["sessions"].add(f"state:{sid or project}")
+
+        model_usage = p.get("lastModelUsage")
+        if isinstance(model_usage, dict) and model_usage:
+            before = sum(m.get("cost", 0.0) for m in day["models"].values())
+            for model, mv in model_usage.items():
+                if isinstance(mv, dict):
+                    add_model(day, model, mv)
+            after = sum(m.get("cost", 0.0) for m in day["models"].values())
+            if after == before and vals["cost"]:
+                add_model(day, "claude-code-state", vals)
+        else:
+            add_model(day, "claude-code-state", vals)
+
+    return days
+
+
 def scan_claude(bounds, cache):
     fc = cache.setdefault("claude", {})
     B = {k: {"in": 0, "out": 0, "cr": 0, "cw": 0, "cost": 0.0, "models": {}, "sessions": set()}
@@ -464,6 +561,7 @@ def scan_claude(bounds, cache):
             hours = [0] * 24
             dh = set()
             proj = None
+            sessions = set()
             seen_mids = set()
             try:
                 with open(f, "r", encoding="utf-8", errors="ignore") as fh:
@@ -479,6 +577,8 @@ def scan_claude(bounds, cache):
                                 continue
                             seen_mids.add(mid)
                         dt = u["dt"]
+                        if u.get("sid"):
+                            sessions.add(u["sid"])
                         dk = dt.date().isoformat()
                         day = days.setdefault(dk, {"in": 0, "out": 0, "cr": 0, "cw": 0,
                                                    "cost": 0.0, "models": {}})
@@ -495,33 +595,43 @@ def scan_claude(bounds, cache):
                             proj = u["cwd"]
             except OSError:
                 continue
-            fc[f] = {"sig": sig, "days": days, "hours": hours, "dh": sorted(dh), "proj": proj}
+            fc[f] = {"sig": sig, "days": days, "hours": hours, "dh": sorted(dh),
+                     "proj": proj, "sessions": sorted(sessions)}
 
     for p in stale:
         fc.pop(p, None)
 
+    def add_day_to_ranges(d, day, session_ids):
+        ks = ["all"]
+        if d == today_d: ks.append("today")
+        if d == yest_d: ks.append("yesterday")
+        if d >= week_d: ks.append("week")
+        if lw_start_d <= d < lw_end_d: ks.append("last_week")
+        if d >= month_d: ks.append("month")
+        if d >= year_d: ks.append("year")
+        for k in ks:
+            b = B[k]
+            b["sessions"].update(session_ids)
+            b["in"] += day["in"]; b["out"] += day["out"]
+            b["cr"] += day["cr"]; b["cw"] += day["cw"]; b["cost"] += day["cost"]
+            for mn, mv in day["models"].items():
+                mm = b["models"].setdefault(mn, {"in": 0, "out": 0, "cr": 0, "cw": 0, "cost": 0.0})
+                mm["in"] += mv["in"]; mm["out"] += mv["out"]
+                mm["cr"] += mv["cr"]; mm["cw"] += mv["cw"]; mm["cost"] += mv["cost"]
+
     # Assembly: per-day → range buckets
+    seen_sessions = set()
+    for f, entry in fc.items():
+        seen_sessions.update(entry.get("sessions") or [])
+
     for f, entry in fc.items():
         for dk, day in entry.get("days", {}).items():
             d = date.fromisoformat(dk)
-            ks = ["all"]
-            if d == today_d: ks.append("today")
-            if d == yest_d: ks.append("yesterday")
-            if d >= week_d: ks.append("week")
-            if lw_start_d <= d < lw_end_d: ks.append("last_week")
-            if d >= month_d: ks.append("month")
-            if d >= year_d: ks.append("year")
-            if not ks:
-                continue
-            for k in ks:
-                b = B[k]
-                b["sessions"].add(f)
-                b["in"] += day["in"]; b["out"] += day["out"]
-                b["cr"] += day["cr"]; b["cw"] += day["cw"]; b["cost"] += day["cost"]
-                for mn, mv in day["models"].items():
-                    mm = b["models"].setdefault(mn, {"in": 0, "out": 0, "cr": 0, "cw": 0, "cost": 0.0})
-                    mm["in"] += mv["in"]; mm["out"] += mv["out"]
-                    mm["cr"] += mv["cr"]; mm["cw"] += mv["cw"]; mm["cost"] += mv["cost"]
+            add_day_to_ranges(d, day, set(entry.get("sessions") or [f]))
+
+    for dk, day in _claude_state_days(seen_sessions).items():
+        d = date.fromisoformat(dk)
+        add_day_to_ranges(d, day, set(day.get("sessions") or [f"state:{dk}"]))
 
     # Current session: sum all days of the most recently modified file
     cur_in = cur_out = cur_cr = cur_cw = 0
@@ -571,7 +681,8 @@ def _claude_usage(line, want_dt=False):
         write_cost = (w5 or 0) / 1e6 * p["write5m"] + (w1 or 0) / 1e6 * p["write1h"]
     cost = inp / 1e6 * p["in"] + out / 1e6 * p["out"] + cr / 1e6 * p["cache_read"] + write_cost
     res = {"in": inp, "out": out, "cr": cr, "cw": cw, "cost": cost,
-           "model": msg.get("model"), "cwd": o.get("cwd"), "mid": msg.get("id")}
+           "model": msg.get("model"), "cwd": o.get("cwd"),
+           "mid": msg.get("id"), "sid": o.get("sessionId")}
     if want_dt:
         res["dt"] = dt
     return res

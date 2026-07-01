@@ -8,7 +8,7 @@ Tokei 读取本地 AI CLI 工具的日志,统计 token 用量与成本。所有�
 
 | 工具 | 日志路径 | 格式 |
 |------|---------|------|
-| Claude Code | `~/.claude/*/*.jsonl` | JSONL, `type=assistant` 行含 `message.usage` |
+| Claude Code | `~/.claude/projects/**/*.jsonl` + `~/.claude.json` + `~/.claude/history.jsonl` | JSONL `message.usage`; 状态文件 `projects.*.lastTotal*` 作为新版 CLI 兜底 |
 | Codex | `~/.codex/**/rollout-*.jsonl` | JSONL, `payload.info.last_token_usage` |
 | CodeFuse / cfuse | `~/.codefuse/fuse/logs/proxy-stats/*.json` | JSON, `recentRequests[]` 代理请求统计 |
 | Gemini CLI | `~/.gemini/*/chats/session-*.json` | JSON, `messages[].tokens` |
@@ -40,6 +40,7 @@ Tokei 读取本地 AI CLI 工具的日志,统计 token 用量与成本。所有�
 - 输出 = `output_tokens`
 - 缓存读 = `cache_read_input_tokens`
 - 缓存写 = `cache_creation_input_tokens`
+- 如果 `~/.claude/projects` 中缺少真实 assistant usage,Tokei 会读取 `~/.claude.json` 的 `projects.*.lastTotal*` 汇总;当 `lastSessionModified` 缺失时,用 `~/.claude/history.jsonl` 的 session 时间归类到日期范围。
 
 **Codex** — `input_tokens` 已包含缓存,`output_tokens` 已包含推理:
 - 输入 = `input_tokens - cached_input_tokens`

@@ -119,7 +119,7 @@ echo '{"sync_dir":"~/.tokei/sync","device_id":"'$(hostname -s)'"}' > ~/.tokei/co
 
 | 工具 | 日志路径 |
 |------|----------|
-| Claude Code | `~/.claude/projects/<proj>/<session>.jsonl` |
+| Claude Code | `~/.claude/projects/**/*.jsonl` + `~/.claude.json` / `~/.claude/history.jsonl` fallback |
 | Codex CLI | `~/.codex/sessions/YYYY/MM/DD/*.jsonl` |
 | CodeFuse / cfuse | `~/.codefuse/fuse/logs/proxy-stats/*.json` |
 | Gemini CLI | `~/.gemini/gemini-cli/conversations/*.json` |
