@@ -27,7 +27,7 @@ Tokei 是一款 **macOS 菜单栏应用**，实时追踪你在 **10 款 AI 编�
 |------|----------|
 | **Claude Code** | Token（输入/输出/缓存）、成本、配额、模型 |
 | **Codex CLI** | Token、成本、配额、会话 |
-| **CodeFuse / cfuse** | 请求、模型、engine、会话、项目、耗时 |
+| **CodeFuse / cfuse** | Token（cc engine）、成本、缓存命中率、请求、模型、engine、项目 |
 | **Gemini CLI** | Token、思考量、成本、模型 |
 | **Grok CLI** | Token、会话、上下文 |
 | **Hermes** | Token、成本、缓存命中率、模型 |
@@ -121,7 +121,7 @@ echo '{"sync_dir":"~/.tokei/sync","device_id":"'$(hostname -s)'"}' > ~/.tokei/co
 |------|----------|
 | Claude Code | `~/.claude/projects/**/*.jsonl` + `~/.claude.json` / `~/.claude/history.jsonl` fallback |
 | Codex CLI | `~/.codex/sessions/YYYY/MM/DD/*.jsonl` |
-| CodeFuse / cfuse | `~/.codefuse/fuse/logs/proxy-stats/*.json` |
+| CodeFuse / cfuse | `~/.codefuse/engine/cc/projects/**/*.jsonl` + `~/.codefuse/fuse/engine/cc/projects/**/*.jsonl` + `~/.codefuse/fuse/logs/proxy-stats/*.json` |
 | Gemini CLI | `~/.gemini/gemini-cli/conversations/*.json` |
 | Grok CLI | `~/.grok/sessions/YYYY/MM/DD/*.jsonl` |
 | Hermes | `~/.hermes/state.db` + `~/.hermes/profiles/*/state.db` |

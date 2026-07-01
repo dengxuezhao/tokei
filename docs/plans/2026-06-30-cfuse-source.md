@@ -1,5 +1,7 @@
 # CodeFuse Source Implementation Plan
 
+Update 2026-07-01: this initial plan was superseded for the `cc` engine by the discovered CodeFuse project JSONL usage source. The implemented scanner now combines `cc/projects/**/*.jsonl` token usage with proxy-stats request telemetry.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Add CodeFuse/cfuse as a first-class Tokei data source using local proxy stats request metrics.

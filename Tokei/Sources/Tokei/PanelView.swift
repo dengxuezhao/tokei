@@ -7,6 +7,7 @@ struct PanelView: View {
     @State private var sel: RangeKey = .today
     @State private var claudeModelsOpen = false
     @State private var geminiModelsOpen = false
+    @State private var cfuseModelsOpen = false
     @State private var piModelsOpen = false
     @State private var openCodeModelsOpen = false
     @State private var expandedModels: Set<String> = []
@@ -218,7 +219,8 @@ struct PanelView: View {
                          tint: Theme.claude, content: AnyView(claudeBlock(u.claude, cr))),
             ToolCardItem(id: "codex", name: "Codex", visible: showCodex, active: xr.sessions > 0,
                          tint: Theme.codex, content: AnyView(codexBlock(u.codex, xr))),
-            ToolCardItem(id: "cfuse", name: "CodeFuse", visible: showCfuse, active: cfr.requests > 0,
+            ToolCardItem(id: "cfuse", name: "CodeFuse", visible: showCfuse,
+                         active: cfr.requests > 0 || cfr.messages > 0 || (cfr.in + cfr.out + cfr.cr + cfr.cw) > 0,
                          tint: Theme.cfuse, content: AnyView(cfuseBlock(cfr))),
             ToolCardItem(id: "gemini", name: "Gemini", visible: showGemini, active: gr.sessions > 0,
                          tint: Theme.gemini, content: AnyView(geminiBlock(gr))),
@@ -370,27 +372,58 @@ struct PanelView: View {
     // MARK: - CodeFuse 卡片
     @ViewBuilder
     func cfuseBlock(_ r: CfuseRange) -> some View {
+        let tokenTotal = r.in + r.out + r.cr + r.cw
+        let hasTokenUsage = tokenTotal > 0 || r.messages > 0
         VStack(alignment: .leading, spacing: 11) {
             cardHead("CodeFuse", tint: Theme.cfuse, sessions: r.sessions)
-            if r.requests > 0 {
-                CostHeadline(value: Fmt.human(r.requests), caption: "\(sel.label) 请求", tint: Theme.cfuse)
-                metricGrid({
-                    var items: [Metric] = [
-                        .init("checkmark.circle", "成功", "\(r.success)"),
-                        .init("person.2", "会话", "\(r.sessions)"),
-                        .init("doc.text", "请求体", Fmt.bytes(r.request_size)),
-                    ]
-                    if r.errors > 0 {
-                        items.append(.init("exclamationmark.triangle", "错误", "\(r.errors)"))
+            if hasTokenUsage || r.requests > 0 {
+                if hasTokenUsage {
+                    CostHeadline(value: Fmt.human(tokenTotal), caption: "\(sel.label) 总量", tint: Theme.cfuse)
+                    metricGrid([
+                        .init("dollarsign.circle", "≈成本", String(format: "$%.2f", r.cost)),
+                    ], hit: r.hit, extra: {
+                        var items: [Metric] = [
+                            .init("arrow.down", "输入", Fmt.human(r.in)),
+                            .init("arrow.up", "输出", Fmt.human(r.out)),
+                            .init("bolt.fill", "缓存读", Fmt.human(r.cr)),
+                            .init("square.stack.3d.up.fill", "缓存写", Fmt.human(r.cw)),
+                            .init("message", "消息", "\(r.messages)"),
+                        ]
+                        if r.requests > 0 {
+                            items.append(.init("paperplane", "请求", "\(r.requests)"))
+                        }
+                        if r.errors > 0 {
+                            items.append(.init("exclamationmark.triangle", "错误", "\(r.errors)"))
+                        }
+                        return items
+                    }(), tint: Theme.cfuse)
+                    let cfuseRows = r.models.filter { $0.total > 0 }.map { m in
+                        ModelRow(name: m.name, pin: m.pin, pout: m.pout, cost: m.cost, total: m.total, hit: m.hit,
+                                 tokIn: m.in, tokOut: m.out, tokCR: m.cr, tokCW: m.cw)
                     }
-                    if r.avg_duration > 0 {
-                        items.append(.init("clock", "耗时", Fmt.duration(r.avg_duration)))
+                    if !cfuseRows.isEmpty {
+                        modelDisclosure(cfuseRows, open: $cfuseModelsOpen, tint: Theme.cfuse)
                     }
-                    if r.avg_ttft > 0 {
-                        items.append(.init("timer", "首字", String(format: "%.1fs", Double(r.avg_ttft) / 1000)))
-                    }
-                    return items
-                }(), tint: Theme.cfuse)
+                } else {
+                    CostHeadline(value: Fmt.human(r.requests), caption: "\(sel.label) 请求", tint: Theme.cfuse)
+                    metricGrid({
+                        var items: [Metric] = [
+                            .init("checkmark.circle", "成功", "\(r.success)"),
+                            .init("person.2", "会话", "\(r.sessions)"),
+                            .init("doc.text", "请求体", Fmt.bytes(r.request_size)),
+                        ]
+                        if r.errors > 0 {
+                            items.append(.init("exclamationmark.triangle", "错误", "\(r.errors)"))
+                        }
+                        if r.avg_duration > 0 {
+                            items.append(.init("clock", "耗时", Fmt.duration(r.avg_duration)))
+                        }
+                        if r.avg_ttft > 0 {
+                            items.append(.init("timer", "首字", String(format: "%.1fs", Double(r.avg_ttft) / 1000)))
+                        }
+                        return items
+                    }(), tint: Theme.cfuse)
+                }
                 if let engine = r.engines.first {
                     infoBadge("engine", engine.name, tint: Theme.cfuse)
                 }

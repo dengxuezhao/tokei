@@ -1,5 +1,7 @@
 # CodeFuse Source Design
 
+Update 2026-07-01: later validation found CodeFuse Claude Code engine token usage in `~/.codefuse/engine/cc/projects/**/*.jsonl` and `~/.codefuse/fuse/engine/cc/projects/**/*.jsonl`. Proxy stats remain useful only for request/latency telemetry.
+
 ## Context
 
 Tokei currently reads each supported AI tool from its own local data source and normalizes the result into fixed time ranges. Token-aware tools expose real usage fields, while tools such as Grok, QoderWork, and OpenClaw fall back to locally verifiable activity metrics when token data is missing.

@@ -10,7 +10,7 @@ Tokei 读取本地 AI CLI 工具的日志,统计 token 用量与成本。所有�
 |------|---------|------|
 | Claude Code | `~/.claude/projects/**/*.jsonl` + `~/.claude.json` + `~/.claude/history.jsonl` | JSONL `message.usage`; 状态文件 `projects.*.lastTotal*` 作为新版 CLI 兜底 |
 | Codex | `~/.codex/**/rollout-*.jsonl` | JSONL, `payload.info.last_token_usage` |
-| CodeFuse / cfuse | `~/.codefuse/fuse/logs/proxy-stats/*.json` | JSON, `recentRequests[]` 代理请求统计 |
+| CodeFuse / cfuse | `~/.codefuse/engine/cc/projects/**/*.jsonl` + `~/.codefuse/fuse/engine/cc/projects/**/*.jsonl` + `~/.codefuse/fuse/logs/proxy-stats/*.json` | JSONL `message.usage` 统计 cc engine token; proxy-stats 仅补充请求/耗时 |
 | Gemini CLI | `~/.gemini/*/chats/session-*.json` | JSON, `messages[].tokens` |
 | Grok CLI | `~/.grok/sessions/*/*/summary.json` + `updates.jsonl` | JSON, `_meta.totalTokens` |
 | Qoder | `~/Library/Application Support/QoderWork/data/agents.db` | SQLite, `messages.metadata` |
@@ -79,7 +79,7 @@ Tokei 读取本地 AI CLI 工具的日志,统计 token 用量与成本。所有�
 
 **Grok CLI** — 无输入/输出拆分,仅 `totalTokens`(上下文窗口累计,取最大值,非真实消耗量)。
 
-**CodeFuse / cfuse** — proxy-stats 不包含真实 token/cost usage;仅统计 `/v1/messages` 请求数、成功/失败、engine、model、session、cwd、requestSize、duration、ttftMs。`requestSize` 是请求 payload 大小,不等同于 input token。
+**CodeFuse / cfuse** — cc engine 的真实 token/cost 来自 `projects/**/*.jsonl` 的 assistant `message.usage`,字段与 Claude Code 一致: `input_tokens`、`output_tokens`、`cache_read_input_tokens`、`cache_creation_input_tokens`。同一 `sessionId + message.id` 多次写入时保留 token 总量更大的最终 usage。proxy-stats 仅统计 `/v1/messages` 请求数、成功/失败、engine、model、session、cwd、requestSize、duration、ttftMs;`requestSize` 是请求 payload 大小,不等同于 input token。
 
 **Qoder** — `inputTokens` / `outputTokens` 目前全为 0,仅 `durationMs` 和 `contextUsageRatio` 有值。
 
@@ -149,6 +149,8 @@ write_cost:
 - `write5m` = OpenRouter 的 `cache_write` 价(5 分钟 TTL)
 - `write1h` = Anthropic 为 `2 × input_price`(1 小时 TTL)
 
+CodeFuse / cfuse 的 `cc` engine 使用同一套 `message.usage` 字段和价格表计算成本。
+
 ### Codex 成本公式
 
 ```
@@ -180,7 +182,7 @@ cost = (input - cached)/1M × price_in
 
 Pi 优先使用会话 JSONL 中的 `usage.cost.total`；OpenCode 直接使用消息 JSON 中的 `cost` 字段。若 Pi 成本字段缺失，则按统一价格表用 input/output/cache_read/cache_write 回退估算。
 
-### Grok / CodeFuse / Qoder / OpenClaw
+### Grok / Qoder / OpenClaw
 
 不估算成本。
 

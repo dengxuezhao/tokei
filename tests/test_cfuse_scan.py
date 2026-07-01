@@ -20,6 +20,7 @@ class CfuseScanTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.module.CFUSE_PROXY_STATS_DIR = self.tmp.name
+        self.module.CFUSE_CC_PROJECT_DIRS = []
         self.bounds = self.module.range_bounds()
         self.today = self.bounds["today"]
 
@@ -142,6 +143,56 @@ class CfuseScanTest(unittest.TestCase):
         self.assertEqual(today["engines"]["cc"]["models"]["antchat/GLM-5.1"]["requests"], 1)
         self.assertEqual(today["projects"]["/repo"]["requests"], 2)
         self.assertEqual(today["projects"]["/other"]["requests"], 1)
+
+    def test_scan_cfuse_counts_cc_project_usage_once_per_message_id(self):
+        projects = os.path.join(self.tmp.name, "projects")
+        proj = os.path.join(projects, "-repo")
+        os.makedirs(proj)
+        self.module.CFUSE_CC_PROJECT_DIRS = [projects]
+
+        def assistant(message_id, output_tokens, ts_offset=0, model="claude-opus-4-6"):
+            return {
+                "type": "assistant",
+                "timestamp": (self.today + timedelta(hours=9, seconds=ts_offset)).isoformat(),
+                "sessionId": "s-cc",
+                "cwd": "/repo",
+                "message": {
+                    "id": message_id,
+                    "role": "assistant",
+                    "model": model,
+                    "content": [],
+                    "usage": {
+                        "input_tokens": 100 if model.startswith("claude") else 10,
+                        "output_tokens": output_tokens,
+                        "cache_read_input_tokens": 200 if model.startswith("claude") else 0,
+                        "cache_creation_input_tokens": 30 if model.startswith("claude") else 5,
+                    },
+                },
+            }
+
+        path = os.path.join(proj, "s-cc.jsonl")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(json.dumps(assistant("msg-1", 10, 0)) + "\n")
+            f.write(json.dumps(assistant("msg-1", 70, 1)) + "\n")
+            f.write(json.dumps(assistant("msg-2", 20, 2, model="GLM-5.2")) + "\n")
+
+        result = self.module.scan_cfuse(self.bounds, {})
+
+        today = result["ranges"]["today"]
+        self.assertEqual(today["requests"], 0)
+        self.assertEqual(today["messages"], 2)
+        self.assertEqual(today["in"], 110)
+        self.assertEqual(today["out"], 90)
+        self.assertEqual(today["cr"], 200)
+        self.assertEqual(today["cw"], 35)
+        self.assertGreater(today["cost"], 0)
+        self.assertEqual(today["sessions"], {"s-cc"})
+        self.assertEqual(today["models"]["claude-opus-4-6"]["messages"], 1)
+        self.assertEqual(today["models"]["claude-opus-4-6"]["out"], 70)
+        self.assertEqual(today["models"]["GLM-5.2"]["messages"], 1)
+        self.assertEqual(today["engines"]["cc"]["messages"], 2)
+        self.assertEqual(today["engines"]["cc"]["models"]["claude-opus-4-6"]["messages"], 1)
+        self.assertEqual(today["projects"]["/repo"]["messages"], 2)
 
 
 if __name__ == "__main__":

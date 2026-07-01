@@ -267,6 +267,13 @@ final class SyncManager {
             d.requests += s.requests
             d.success += s.success
             d.errors += s.errors
+            d.messages += s.messages
+            d.in += s.in
+            d.out += s.out
+            d.cr += s.cr
+            d.cw += s.cw
+            d.cost += s.cost
+            d.hit = hitRate(cached: d.cr, input: d.in, cacheWrite: d.cw)
             d.sessions += s.sessions
             d.request_size += s.request_size
             d.response_size += s.response_size
@@ -388,6 +395,13 @@ final class SyncManager {
                 dst[idx].requests += m.requests
                 dst[idx].success += m.success
                 dst[idx].errors += m.errors
+                dst[idx].messages += m.messages
+                dst[idx].in += m.in
+                dst[idx].out += m.out
+                dst[idx].cr += m.cr
+                dst[idx].cw += m.cw
+                dst[idx].cost += m.cost
+                dst[idx].hit = hitRate(cached: dst[idx].cr, input: dst[idx].in, cacheWrite: dst[idx].cw)
                 dst[idx].request_size += m.request_size
                 dst[idx].response_size += m.response_size
                 dst[idx].avg_duration = weightedAverage(dst[idx].avg_duration, originalRequests, m.avg_duration, m.requests) ?? 0
@@ -396,7 +410,11 @@ final class SyncManager {
                 dst.append(m)
             }
         }
-        dst.sort { $0.requests > $1.requests }
+        dst.sort {
+            if $0.cost != $1.cost { return $0.cost > $1.cost }
+            if $0.total != $1.total { return $0.total > $1.total }
+            return $0.requests > $1.requests
+        }
     }
 
     private static func mergeCfuseEngines(_ dst: inout [CfuseEngineStat], _ src: [CfuseEngineStat]) {
@@ -406,6 +424,13 @@ final class SyncManager {
                 dst[idx].requests += m.requests
                 dst[idx].success += m.success
                 dst[idx].errors += m.errors
+                dst[idx].messages += m.messages
+                dst[idx].in += m.in
+                dst[idx].out += m.out
+                dst[idx].cr += m.cr
+                dst[idx].cw += m.cw
+                dst[idx].cost += m.cost
+                dst[idx].hit = hitRate(cached: dst[idx].cr, input: dst[idx].in, cacheWrite: dst[idx].cw)
                 dst[idx].request_size += m.request_size
                 dst[idx].response_size += m.response_size
                 dst[idx].avg_duration = weightedAverage(dst[idx].avg_duration, originalRequests, m.avg_duration, m.requests) ?? 0
@@ -415,7 +440,11 @@ final class SyncManager {
                 dst.append(m)
             }
         }
-        dst.sort { $0.requests > $1.requests }
+        dst.sort {
+            if $0.cost != $1.cost { return $0.cost > $1.cost }
+            if $0.total != $1.total { return $0.total > $1.total }
+            return $0.requests > $1.requests
+        }
     }
 
     private static func mergeModelName(_ lhs: String?, _ rhs: String?) -> String? {

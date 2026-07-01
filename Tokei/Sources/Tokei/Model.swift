@@ -348,18 +348,39 @@ struct CfuseNamedStat: Codable, Identifiable {
     var requests: Int
     var success: Int
     var errors: Int
+    var messages: Int
+    var `in`: Int
+    var out: Int
+    var cr: Int
+    var cw: Int
+    var cost: Double
+    var hit: Double
+    var pin: Double
+    var pout: Double
     var request_size: Int
     var response_size: Int
     var avg_duration: Int
     var avg_ttft: Int
     var id: String { name }
+    var total: Int { `in` + out + cr + cw }
 
     init(name: String = "", requests: Int = 0, success: Int = 0, errors: Int = 0,
+         messages: Int = 0, `in` input: Int = 0, out: Int = 0, cr: Int = 0,
+         cw: Int = 0, cost: Double = 0, hit: Double = 0, pin: Double = 0, pout: Double = 0,
          request_size: Int = 0, response_size: Int = 0, avg_duration: Int = 0, avg_ttft: Int = 0) {
         self.name = name
         self.requests = requests
         self.success = success
         self.errors = errors
+        self.messages = messages
+        self.in = input
+        self.out = out
+        self.cr = cr
+        self.cw = cw
+        self.cost = cost
+        self.hit = hit
+        self.pin = pin
+        self.pout = pout
         self.request_size = request_size
         self.response_size = response_size
         self.avg_duration = avg_duration
@@ -372,6 +393,15 @@ struct CfuseNamedStat: Codable, Identifiable {
         requests = try c.decodeIfPresent(Int.self, forKey: .requests) ?? 0
         success = try c.decodeIfPresent(Int.self, forKey: .success) ?? 0
         errors = try c.decodeIfPresent(Int.self, forKey: .errors) ?? 0
+        messages = try c.decodeIfPresent(Int.self, forKey: .messages) ?? 0
+        `in` = try c.decodeIfPresent(Int.self, forKey: .in) ?? 0
+        out = try c.decodeIfPresent(Int.self, forKey: .out) ?? 0
+        cr = try c.decodeIfPresent(Int.self, forKey: .cr) ?? 0
+        cw = try c.decodeIfPresent(Int.self, forKey: .cw) ?? 0
+        cost = try c.decodeIfPresent(Double.self, forKey: .cost) ?? 0
+        hit = try c.decodeIfPresent(Double.self, forKey: .hit) ?? 0
+        pin = try c.decodeIfPresent(Double.self, forKey: .pin) ?? 0
+        pout = try c.decodeIfPresent(Double.self, forKey: .pout) ?? 0
         request_size = try c.decodeIfPresent(Int.self, forKey: .request_size) ?? 0
         response_size = try c.decodeIfPresent(Int.self, forKey: .response_size) ?? 0
         avg_duration = try c.decodeIfPresent(Int.self, forKey: .avg_duration) ?? 0
@@ -384,20 +414,41 @@ struct CfuseEngineStat: Codable, Identifiable {
     var requests: Int
     var success: Int
     var errors: Int
+    var messages: Int
+    var `in`: Int
+    var out: Int
+    var cr: Int
+    var cw: Int
+    var cost: Double
+    var hit: Double
+    var pin: Double
+    var pout: Double
     var request_size: Int
     var response_size: Int
     var avg_duration: Int
     var avg_ttft: Int
     var models: [CfuseNamedStat]
     var id: String { name }
+    var total: Int { `in` + out + cr + cw }
 
     init(name: String = "", requests: Int = 0, success: Int = 0, errors: Int = 0,
+         messages: Int = 0, `in` input: Int = 0, out: Int = 0, cr: Int = 0,
+         cw: Int = 0, cost: Double = 0, hit: Double = 0, pin: Double = 0, pout: Double = 0,
          request_size: Int = 0, response_size: Int = 0, avg_duration: Int = 0,
          avg_ttft: Int = 0, models: [CfuseNamedStat] = []) {
         self.name = name
         self.requests = requests
         self.success = success
         self.errors = errors
+        self.messages = messages
+        self.in = input
+        self.out = out
+        self.cr = cr
+        self.cw = cw
+        self.cost = cost
+        self.hit = hit
+        self.pin = pin
+        self.pout = pout
         self.request_size = request_size
         self.response_size = response_size
         self.avg_duration = avg_duration
@@ -411,6 +462,15 @@ struct CfuseEngineStat: Codable, Identifiable {
         requests = try c.decodeIfPresent(Int.self, forKey: .requests) ?? 0
         success = try c.decodeIfPresent(Int.self, forKey: .success) ?? 0
         errors = try c.decodeIfPresent(Int.self, forKey: .errors) ?? 0
+        messages = try c.decodeIfPresent(Int.self, forKey: .messages) ?? 0
+        `in` = try c.decodeIfPresent(Int.self, forKey: .in) ?? 0
+        out = try c.decodeIfPresent(Int.self, forKey: .out) ?? 0
+        cr = try c.decodeIfPresent(Int.self, forKey: .cr) ?? 0
+        cw = try c.decodeIfPresent(Int.self, forKey: .cw) ?? 0
+        cost = try c.decodeIfPresent(Double.self, forKey: .cost) ?? 0
+        hit = try c.decodeIfPresent(Double.self, forKey: .hit) ?? 0
+        pin = try c.decodeIfPresent(Double.self, forKey: .pin) ?? 0
+        pout = try c.decodeIfPresent(Double.self, forKey: .pout) ?? 0
         request_size = try c.decodeIfPresent(Int.self, forKey: .request_size) ?? 0
         response_size = try c.decodeIfPresent(Int.self, forKey: .response_size) ?? 0
         avg_duration = try c.decodeIfPresent(Int.self, forKey: .avg_duration) ?? 0
@@ -423,6 +483,13 @@ struct CfuseRange: Codable {
     var requests: Int
     var success: Int
     var errors: Int
+    var messages: Int
+    var hit: Double
+    var `in`: Int
+    var out: Int
+    var cr: Int
+    var cw: Int
+    var cost: Double
     var sessions: Int
     var request_size: Int
     var response_size: Int
@@ -433,12 +500,21 @@ struct CfuseRange: Codable {
     var projects: [CfuseNamedStat]
 
     init(requests: Int = 0, success: Int = 0, errors: Int = 0, sessions: Int = 0,
+         messages: Int = 0, hit: Double = 0, `in` input: Int = 0, out: Int = 0,
+         cr: Int = 0, cw: Int = 0, cost: Double = 0,
          request_size: Int = 0, response_size: Int = 0, avg_duration: Int = 0,
          avg_ttft: Int = 0, models: [CfuseNamedStat] = [], engines: [CfuseEngineStat] = [],
          projects: [CfuseNamedStat] = []) {
         self.requests = requests
         self.success = success
         self.errors = errors
+        self.messages = messages
+        self.hit = hit
+        self.in = input
+        self.out = out
+        self.cr = cr
+        self.cw = cw
+        self.cost = cost
         self.sessions = sessions
         self.request_size = request_size
         self.response_size = response_size
@@ -454,6 +530,13 @@ struct CfuseRange: Codable {
         requests = try c.decodeIfPresent(Int.self, forKey: .requests) ?? 0
         success = try c.decodeIfPresent(Int.self, forKey: .success) ?? 0
         errors = try c.decodeIfPresent(Int.self, forKey: .errors) ?? 0
+        messages = try c.decodeIfPresent(Int.self, forKey: .messages) ?? 0
+        hit = try c.decodeIfPresent(Double.self, forKey: .hit) ?? 0
+        `in` = try c.decodeIfPresent(Int.self, forKey: .in) ?? 0
+        out = try c.decodeIfPresent(Int.self, forKey: .out) ?? 0
+        cr = try c.decodeIfPresent(Int.self, forKey: .cr) ?? 0
+        cw = try c.decodeIfPresent(Int.self, forKey: .cw) ?? 0
+        cost = try c.decodeIfPresent(Double.self, forKey: .cost) ?? 0
         sessions = try c.decodeIfPresent(Int.self, forKey: .sessions) ?? 0
         request_size = try c.decodeIfPresent(Int.self, forKey: .request_size) ?? 0
         response_size = try c.decodeIfPresent(Int.self, forKey: .response_size) ?? 0
